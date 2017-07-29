@@ -1,8 +1,16 @@
 package com.example.vicky.newsapp;
 
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
 import android.net.Uri;
 import android.os.AsyncTask;
+import android.preference.PreferenceManager;
+import android.support.v4.app.LoaderManager;
+import android.support.v4.content.AsyncTaskLoader;
+import android.support.v4.content.Loader;
+import android.support.v4.content.SharedPreferencesCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.support.v7.widget.LinearLayoutManager;
@@ -14,93 +22,134 @@ import android.widget.EditText;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.support.v7.widget.RecyclerView;
-
-import com.example.vicky.newsapp.model.Repository;
+import com.example.vicky.newsapp.data.*;
 
 import org.json.JSONException;
 
 import java.io.IOException;
 import java.net.URL;
 import java.util.ArrayList;
+import com.example.vicky.newsapp.data.*;
 
-public class MainActivity extends AppCompatActivity {
-    private static final String TAG = "mainactivity";
 
+//AsyncTaskLoader, implementing all the required callbacks
+public class MainActivity extends AppCompatActivity implements LoaderManager.LoaderCallbacks<Void>, GithubAdapter.ItemClickListener {
+    static final String TAG = "mainactivity";
     private ProgressBar progress;
     private RecyclerView rv;
+    private GithubAdapter adapter;
+    private Cursor cursor;
+    private SQLiteDatabase db;
+
+    private static final int NEWS_LOADER = 1;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        rv = (RecyclerView) findViewById(R.id.recyclerView);
         progress = (ProgressBar) findViewById(R.id.progressBar);
-
+        rv = (RecyclerView) findViewById(R.id.recyclerView);
         rv.setLayoutManager(new LinearLayoutManager(this));
-        rv.setAdapter(new GithubAdapter());
+
+        //In onCreate, have your activity load what's currently in your database into the recyclerview for display.
+
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        boolean isFirst = prefs.getBoolean("isfirst", true);
+
+        //Have your activity check if the app has been installed before, if not, load data into your database using your network methods.
+
+        if (isFirst) {
+            load();
+            SharedPreferences.Editor editor = prefs.edit();
+            editor.putBoolean("isfirst", false);
+            editor.commit();
+        }
+        ScheduleUtilities.scheduleRefresh(this);
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        db = new DBHelper(MainActivity.this).getReadableDatabase();
+        cursor = DatabaseUtils.getAll(db);
+        adapter = new GithubAdapter(cursor, this);
+        rv.setAdapter(adapter);
+        adapter.notifyDataSetChanged();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        db.close();
+        cursor.close();
     }
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
-        getMenuInflater().inflate(R.menu.main,menu);
+        getMenuInflater().inflate(R.menu.main, menu);
         return true;
     }
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        int itenNumber = item.getItemId();
+        int itemNumber = item.getItemId();
 
-        if(itenNumber == R.id.search){
-            new NewsTask().execute();
+        if (itemNumber == R.id.search) {
+            load();
         }
         return true;
     }
 
-    class NewsTask extends AsyncTask<URL, Void, ArrayList<Repository>>{
+    @Override
+    public Loader<Void> onCreateLoader(int id, final Bundle args) {
+        return new AsyncTaskLoader<Void>(this) {
 
-        protected void onPreExecute() {
-            super.onPreExecute();
-            progress.setVisibility(View.VISIBLE);
-        }
-
-        @Override
-        protected ArrayList<Repository> doInBackground(URL... params) {
-            ArrayList<Repository> result = null;
-            URL url = NetworkUtils.makeURL("the-next-web", "latest", "0bd77307a2da4ea6b3bc34da1e964f1d" );
-            Log.d(TAG, "url: " + url.toString());
-            try {
-                String json = NetworkUtils.getResponseFromHttpUrl(url);
-                result = NetworkUtils.parseJSON(json);
-            } catch (IOException e) {
-                e.printStackTrace();
-            } catch (JSONException e) {
-                e.printStackTrace();
+            @Override
+            protected void onStartLoading() {
+                super.onStartLoading();
+                progress.setVisibility(View.VISIBLE);
             }
-            return result;
-        }
 
-        @Override
-        protected void onPostExecute(final ArrayList<Repository> data) {
-            super.onPostExecute(data);
-            progress.setVisibility(View.GONE);
-            if (data != null) {
-                GithubAdapter adapter = new GithubAdapter(data, new GithubAdapter.ItemClickListener() {
-                    @Override
-                    public void onItemClick(int clickedItemIndex) {
-                        String url = data.get(clickedItemIndex).getUrl();
-                        Log.d(TAG, String.format("Url %s", url));
-                        openWebPage(url);
-                    }
-                    public void openWebPage(String url) {
-                        Uri webpage = Uri.parse(url);
-                        Intent intent = new Intent(Intent.ACTION_VIEW, webpage);
-                        if (intent.resolveActivity(getPackageManager()) != null) {
-                            startActivity(intent);
-                        }
-                    }
-                });
-                rv.setAdapter(adapter);
+            @Override
+            public Void loadInBackground() {
+                RefreshTasks.refreshArticles(MainActivity.this);
+                return null;
             }
-        }
+
+        };
     }
+
+    @Override
+    public void onLoadFinished(Loader<Void> loader, Void data) {
+        progress.setVisibility(View.GONE);
+        db = new DBHelper(MainActivity.this).getReadableDatabase();
+        cursor = DatabaseUtils.getAll(db);
+
+        adapter = new GithubAdapter(cursor, this);
+        rv.setAdapter(adapter);
+        adapter.notifyDataSetChanged();
+
+    }
+
+    @Override
+    public void onLoaderReset(Loader<Void> loader) {
+    }
+
+    @Override
+    public void onItemClick(Cursor cursor, int clickedItemIndex) {
+        cursor.moveToPosition(clickedItemIndex);
+        String url = cursor.getString(cursor.getColumnIndex(Contract.TABLE_ARTICLES.COLUMN_NAME_URL));
+        Log.d(TAG, String.format("Url %s", url));
+
+        Intent intent = new Intent(Intent.ACTION_VIEW);
+        intent.setData(Uri.parse(url));
+        startActivity(intent);
+    }
+
+    public void load() {
+        LoaderManager loaderManager = getSupportLoaderManager();
+        loaderManager.restartLoader(NEWS_LOADER, null, this).forceLoad();
+
+    }
+
 }

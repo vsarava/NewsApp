@@ -3,7 +3,7 @@ package com.example.vicky.newsapp;
 import android.net.Uri;
 import android.util.Log;
 
-import com.example.vicky.newsapp.model.Repository;
+import com.example.vicky.newsapp.data.*;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -24,23 +24,26 @@ import javax.net.ssl.HttpsURLConnection;
  */
 
 public class NetworkUtils {
-
     public static final String TAG = "NetworkUtils";
-    public static final String GITHUB_BASE_URL = "https://newsapi.org/v1/articles";
+
+    public static final String GITHUB_BASE_URL =
+            "https://newsapi.org/v1/articles";
     public static final String PARAM_QUERY = "source";
+
     public static final String PARAM_SORT = "sortBy";
-    public static final String PARAM_API = "apiKey";
+    public static final String PARAM_API_KEY= "apiKey";
 
+    public static URL makeURL() {
+        Uri uri = Uri.parse(GITHUB_BASE_URL).buildUpon()
+                .appendQueryParameter(PARAM_QUERY,"the-next-web").appendQueryParameter(PARAM_SORT,"latest").appendQueryParameter(PARAM_API_KEY,"0bd77307a2da4ea6b3bc34da1e964f1d").build();
 
-    public static URL makeURL(String searchQuery, String sortBy, String apiKey){
-        Uri uri = Uri.parse(GITHUB_BASE_URL).buildUpon().appendQueryParameter(PARAM_QUERY,searchQuery).appendQueryParameter(PARAM_SORT,sortBy).appendQueryParameter(PARAM_API,apiKey).build();
 
         URL url = null;
-        try{
+        try {
             String urlString = uri.toString();
-            Log.d(TAG,"Url: "+urlString);
+            Log.d(TAG, "Url: " + urlString);
             url = new URL(uri.toString());
-        }catch (MalformedURLException e){
+        } catch (MalformedURLException e) {
             e.printStackTrace();
         }
 
@@ -54,30 +57,39 @@ public class NetworkUtils {
             Scanner input = new Scanner(in);
 
             input.useDelimiter("\\A");
-            return (input.hasNext()) ? input.next() : null;
+            String result = (input.hasNext()) ? input.next() : null;
+            return result;
 
+        }catch (IOException e){
+            e.printStackTrace();
         } finally {
             urlConnection.disconnect();
         }
+        return null;
     }
 
-    public static ArrayList<Repository> parseJSON(String json) throws JSONException {
-        ArrayList<Repository> result = new ArrayList<>();
+    public static ArrayList<Article> parseJSON(String json) throws JSONException {
+        ArrayList<Article> result = new ArrayList<>();
         JSONObject main = new JSONObject(json);
         JSONArray items = main.getJSONArray("articles");
+        String imgUrl = null;
 
         for(int i = 0; i < items.length(); i++){
             JSONObject item = items.getJSONObject(i);
-            String author = item.getString("author");
             String title = item.getString("title");
+            String author = item.getString("author");
+            String publishedDate = item.getString("publishedAt");
             String description = item.getString("description");
             String url = item.getString("url");
             String urlToImage = item.getString("urlToImage");
-            String publishedAt = item.getString("publishedAt");
-            Repository repo = new Repository(author, title, description, url, urlToImage, publishedAt);
-            result.add(repo);
+
+            result.add(new Article(author, title, description, url, urlToImage, publishedDate));
+
         }
+        Log.d(TAG, "final articles size: " + result.size());
         return result;
     }
 
+
 }
+

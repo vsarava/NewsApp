@@ -1,10 +1,7 @@
-package com.example.vicky.newsapp.model;
+package com.example.vicky.newsapp.data;
 
-/**
- * Created by Vicky on 6/29/17.
- */
-
-public class Repository {
+//Data Model class created to fetch data from database and store in data objects.
+public class Article{
 
     private String author;
     private String title;
@@ -13,7 +10,7 @@ public class Repository {
     private String urlToImage;
     private String publishedAt;
 
-    public Repository(String author, String title, String description, String url, String urlToImage, String publishedAt) {
+    public Article(String author, String title, String description, String url, String urlToImage, String publishedAt) {
         this.author = author;
         this.title = title;
         this.description = description;
